@@ -69,20 +69,20 @@ proc add_vcd_instructions_tcl {} {
                     append scopes [get_scopes -regexp {(out_local_V_data.*_0_.*)}]
                 } else {
                     current_scope [get_scopes -regex "/apatb_${project_name}_top/AESL_inst_${project_name}"]
-                    set scopes [get_scopes -regexp {layer(\d*)_.*data_0_V_U.*}]
+                    set scopes [get_scopes -regexp {layer(\d*)_.*_U.*}]
                 }
                 open_vcd fifo_opt.vcd
                 foreach scope $scopes {
                     current_scope $scope
-                    if {[catch [get_objects usedw]] == 0} {
+                    if {[catch [get_objects mOutPtr]] == 0} {
                         puts "$scope skipped"
                         continue
                     }
-                    set usedw [get_objects usedw]
+                    set mOutPtr [get_objects mOutPtr]
                     set depth [get_objects DEPTH]
-                    add_wave $usedw
-                    log_vcd $usedw
-                    log_wave $usedw
+                    add_wave $mOutPtr
+                    log_vcd $mOutPtr
+                    log_wave $mOutPtr
                     add_wave $depth
                     log_vcd $depth
                     log_wave $depth

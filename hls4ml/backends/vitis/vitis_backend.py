@@ -2,6 +2,7 @@ import os
 import sys
 
 from hls4ml.backends import VivadoBackend
+from hls4ml.model.optimizer import get_backend_passes, layer_optimizer
 from hls4ml.model.flow import get_flow, register_flow
 from hls4ml.report import parse_vivado_report
 
@@ -13,6 +14,10 @@ class VitisBackend(VivadoBackend):
         self._register_flows()
 
     def _register_flows(self):
+
+        initializers = self._get_layer_initializers()
+        init_flow = register_flow('init_layers', initializers, requires=['optimize'], backend=self.name)
+
         validation_passes = [
             'vitis:validate_conv_implementation',
             'vitis:validate_strategy',
@@ -26,6 +31,30 @@ class VitisBackend(VivadoBackend):
 
         writer_passes = ['make_stamp', 'vitis:write_hls']
         self._writer_flow = register_flow('write', writer_passes, requires=['vitis:ip'], backend=self.name)
+
+
+        fifo_depth_opt_passes = [
+            'vitis:fifo_depth_optimization'
+        ] + writer_passes  # After optimization, a new project will be written
+
+        register_flow('fifo_depth_optimization', fifo_depth_opt_passes, requires=['vitis:ip'], backend=self.name)
+
+        all_passes = get_backend_passes(self.name)
+
+        extras = [
+            # Ideally this should be empty
+            opt_pass
+            for opt_pass in all_passes
+            if opt_pass
+            not in initializers
+            + writer_passes
+            + fifo_depth_opt_passes
+        ]
+
+        if len(extras) > 0:
+            extras_flow = register_flow('extras', extras, requires=[init_flow], backend=self.name)
+        else:
+            extras_flow = None
 
         ip_flow_requirements = get_flow('vivado:ip').requires.copy()
         ip_flow_requirements.insert(ip_flow_requirements.index('vivado:init_layers'), validation_flow)
@@ -46,7 +75,7 @@ class VitisBackend(VivadoBackend):
 
         return config
 
-    def build(self, model, reset=False, csim=True, synth=True, cosim=False, validation=False, export=False, vsynth=False):
+    def build(self, model, reset=False, csim=True, synth=True, cosim=False, validation=False, export=False, vsynth=False, fifo_opt=False):
         if 'linux' in sys.platform:
             found = os.system('command -v vitis_hls > /dev/null')
             if found != 0:
@@ -57,8 +86,8 @@ class VitisBackend(VivadoBackend):
         os.system(
             (
                 'vitis_hls -f build_prj.tcl "reset={reset} csim={csim} synth={synth} cosim={cosim} '
-                'validation={validation} export={export} vsynth={vsynth}"'
-            ).format(reset=reset, csim=csim, synth=synth, cosim=cosim, validation=validation, export=export, vsynth=vsynth)
+                'validation={validation} export={export} vsynth={vsynth} fifo_opt={fifo_opt}"'
+            ).format(reset=reset, csim=csim, synth=synth, cosim=cosim, validation=validation, export=export, vsynth=vsynth, fifo_opt=fifo_opt)
         )
         os.chdir(curr_dir)
 
